@@ -46,25 +46,44 @@ foreach ($requiredFields as $field) {
 // Optional fields
 $adults = isset($data['adults']) ? (int)$data['adults'] : 0;
 $children = isset($data['children']) ? (int)$data['children'] : 0;
+$ship_id = isset($data['ship_id']) ? (int)$data['ship_id'] : 0;
 $ship_name = $data['ship_name'] ?? null;
 $destination = $data['destination'] ?? null;
 
 // --- Cabin allocation logic ---
-if (!$ship_name || !$data['room_type']) {
-    echo json_encode(['success' => false, 'message' => 'Missing ship_name or room_type']);
+if (!$ship_id && !$ship_name) {
+    echo json_encode(['success' => false, 'message' => 'Missing ship_id or ship_name']);
     exit();
 }
 
-// 1. Get ship capacity
-$stmt = $conn->prepare("SELECT passenger_count FROM ship_details WHERE ship_name = ?");
-$stmt->bind_param("s", $ship_name);
-$stmt->execute();
-$stmt->bind_result($passenger_count);
-if (!$stmt->fetch()) {
-    echo json_encode(['success' => false, 'message' => 'Ship not found']);
-    $stmt->close();
-    $conn->close();
+if (!$data['room_type']) {
+    echo json_encode(['success' => false, 'message' => 'Missing room_type']);
     exit();
+}
+
+// 1. Get ship capacity and handle ship_id/ship_name conversion
+if ($ship_id) {
+    $stmt = $conn->prepare("SELECT ship_name, passenger_count FROM ship_details WHERE ship_id = ?");
+    $stmt->bind_param("i", $ship_id);
+    $stmt->execute();
+    $stmt->bind_result($ship_name, $passenger_count);
+    if (!$stmt->fetch()) {
+        echo json_encode(['success' => false, 'message' => 'Ship not found']);
+        $stmt->close();
+        $conn->close();
+        exit();
+    }
+} else {
+    $stmt = $conn->prepare("SELECT ship_id, passenger_count FROM ship_details WHERE ship_name = ?");
+    $stmt->bind_param("s", $ship_name);
+    $stmt->execute();
+    $stmt->bind_result($ship_id, $passenger_count);
+    if (!$stmt->fetch()) {
+        echo json_encode(['success' => false, 'message' => 'Ship not found']);
+        $stmt->close();
+        $conn->close();
+        exit();
+    }
 }
 $stmt->close();
 
@@ -83,9 +102,9 @@ if (!isset($room_percentages[$room_type])) {
 }
 $max_cabins = floor($passenger_count * $room_percentages[$room_type]);
 
-// 3. Count current bookings for this ship and room type
-$stmt = $conn->prepare("SELECT COUNT(*) FROM booking_overview WHERE ship_name = ? AND room_type = ?");
-$stmt->bind_param("ss", $ship_name, $room_type);
+// 3. Count current bookings for this ship and room type (using ship_id for better performance)
+$stmt = $conn->prepare("SELECT COUNT(*) FROM booking_overview WHERE ship_id = ? AND room_type = ?");
+$stmt->bind_param("is", $ship_id, $room_type);
 $stmt->execute();
 $stmt->bind_result($current_bookings);
 $stmt->fetch();
@@ -102,12 +121,12 @@ $cabin_number = $room_type[0] . str_pad($current_bookings + 1, 3, "0", STR_PAD_L
 
 // --- Dynamic Pricing Calculation ---
 $total_price = 0; // Default to 0 instead of null
-if ($ship_name && $room_type) {
+if ($ship_id && $room_type) {
     // Try to get route from POST data if available
     $route = $data['route'] ?? $destination ?? null;
-    $pricing_sql = "SELECT interior_price, ocean_view_price, balcony_price, suite_price FROM cabin_type_pricing WHERE ship_name = ?";
-    $params = [$ship_name];
-    $types = "s";
+    $pricing_sql = "SELECT interior_price, ocean_view_price, balcony_price, suite_price FROM cabin_type_pricing WHERE ship_id = ?";
+    $params = [$ship_id];
+    $types = "i";
     if ($route) {
         $pricing_sql .= " AND route = ?";
         $params[] = $route;
@@ -136,7 +155,7 @@ if ($ship_name && $room_type) {
         }
     } else {
         // If no pricing found, log for debugging
-        error_log("No pricing found for ship: $ship_name, route: $route, room_type: $room_type");
+        error_log("No pricing found for ship_id: $ship_id, route: $route, room_type: $room_type");
     }
     $pricing_stmt->close();
 }

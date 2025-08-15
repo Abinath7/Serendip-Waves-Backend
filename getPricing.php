@@ -13,21 +13,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 require_once __DIR__ . '/Main Classes/Booking.php';
 
 try {
-    // Get query parameters
+    // Get query parameters - support both ship_id and ship_name
+    $ship_id = isset($_GET['ship_id']) ? (int)$_GET['ship_id'] : 0;
     $ship_name = $_GET['ship_name'] ?? '';
     $route = $_GET['route'] ?? '';
     $room_type = $_GET['room_type'] ?? '';
     $number_of_guests = intval($_GET['number_of_guests'] ?? 1);
     
-    if (empty($ship_name) || empty($route)) {
-        echo json_encode(['success' => false, 'message' => 'ship_name and route parameters are required']);
+    // Require either ship_id or ship_name
+    if (empty($ship_id) && empty($ship_name)) {
+        echo json_encode(['success' => false, 'message' => 'Either ship_id or ship_name parameter is required']);
+        exit();
+    }
+    
+    if (empty($route)) {
+        echo json_encode(['success' => false, 'message' => 'route parameter is required']);
         exit();
     }
     
     $booking = new Booking();
     
+    // Use ship_id if provided, otherwise use ship_name
+    $ship_identifier = $ship_id ? $ship_id : $ship_name;
+    
     // Get pricing for the ship/route (used by both specific and all room types)
-    $pricing_result = $booking->getPricingForShipRoute($ship_name, $route);
+    $pricing_result = $booking->getPricingForShipRoute($ship_identifier, $route);
     
     if (!$pricing_result['success']) {
         echo json_encode($pricing_result);
@@ -57,6 +67,7 @@ try {
         
         echo json_encode([
             'success' => true,
+            'ship_id' => $ship_id,
             'ship_name' => $ship_name,
             'route' => $route,
             'room_type' => $room_type,
@@ -69,6 +80,7 @@ try {
         // Use the already fetched pricing for all room types
         echo json_encode([
             'success' => true,
+            'ship_id' => $ship_id,
             'ship_name' => $ship_name,
             'route' => $route,
             'pricing' => [

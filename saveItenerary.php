@@ -45,8 +45,25 @@ if ($conn->connect_error) {
     exit();
 }
 
-$stmt = $conn->prepare("INSERT INTO itineraries (ship_name, route, departure_port, start_date, end_date, notes, country_image) VALUES (?, ?, ?, ?, ?, ?, ?)");
-$stmt->bind_param("sssssss", $ship_name, $route, $departure_port, $start_date, $end_date, $notes, $country_image);
+// Get ship_id from ship_details table based on ship_name
+$ship_id = null;
+$shipQuery = $conn->prepare("SELECT ship_id FROM ship_details WHERE ship_name = ?");
+$shipQuery->bind_param("s", $ship_name);
+$shipQuery->execute();
+$shipResult = $shipQuery->get_result();
+if ($shipRow = $shipResult->fetch_assoc()) {
+    $ship_id = $shipRow['ship_id'];
+}
+$shipQuery->close();
+
+if ($ship_id === null) {
+    http_response_code(400);
+    echo json_encode(["message" => "Ship not found: " . $ship_name]);
+    exit();
+}
+
+$stmt = $conn->prepare("INSERT INTO itineraries (ship_id, ship_name, route, departure_port, start_date, end_date, notes, country_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+$stmt->bind_param("isssssss", $ship_id, $ship_name, $route, $departure_port, $start_date, $end_date, $notes, $country_image);
 
 if ($stmt->execute()) {
     echo json_encode(["message" => "Itinerary saved successfully."]);

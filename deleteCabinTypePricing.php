@@ -40,7 +40,7 @@ try {
     $pdo = $db->connect();
     
     // First check if the pricing record exists
-    $checkStmt = $pdo->prepare('SELECT id, ship_name, route FROM cabin_type_pricing WHERE id = ?');
+    $checkStmt = $pdo->prepare('SELECT id, ship_id, ship_name, route FROM cabin_type_pricing WHERE id = ?');
     $checkStmt->execute([$id]);
     $existingRecord = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -59,6 +59,7 @@ try {
         $response['message'] = 'Pricing record deleted successfully.';
         $response['deleted_record'] = [
             'id' => $id,
+            'ship_id' => $existingRecord['ship_id'],
             'ship_name' => $existingRecord['ship_name'],
             'route' => $existingRecord['route']
         ];

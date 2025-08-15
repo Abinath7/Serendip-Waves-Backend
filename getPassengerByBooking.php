@@ -25,11 +25,13 @@ try {
     $dbConnector = new DbConnector();
     $pdo = $dbConnector->connect();
     
-    // Get passenger data from booking_overview table with trip dates
-    $query = "SELECT b.full_name as passenger_name, b.email, b.gender, b.citizenship, b.age, b.ship_name, b.destination, b.room_type, b.adults, b.children,
+    // Get passenger data from booking_overview table with trip dates and ship details
+    $query = "SELECT b.full_name as passenger_name, b.email, b.gender, b.citizenship, b.age, 
+                     COALESCE(b.ship_id, s.ship_id) as ship_id, b.ship_name, b.destination, b.room_type, b.adults, b.children,
                      i.start_date AS departure_date, i.end_date AS return_date
               FROM booking_overview b 
-              LEFT JOIN itineraries i ON b.ship_name = i.ship_name AND b.destination = i.route
+              LEFT JOIN ship_details s ON (b.ship_id = s.ship_id OR b.ship_name = s.ship_name)
+              LEFT JOIN itineraries i ON (s.ship_id = i.ship_id OR s.ship_name = i.ship_name) AND b.destination = i.route
               WHERE b.booking_id = ?";
     
     $stmt = $pdo->prepare($query);
@@ -91,6 +93,7 @@ try {
                 'gender' => $passenger['gender'],
                 'citizenship' => $passenger['citizenship'],
                 'age' => $passenger['age'],
+                'ship_id' => $passenger['ship_id'],
                 'ship_name' => $passenger['ship_name'],
                 'destination' => $passenger['destination'],
                 'room_type' => $passenger['room_type'],
