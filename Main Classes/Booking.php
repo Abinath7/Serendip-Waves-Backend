@@ -9,11 +9,32 @@ class Booking {
         $this->pdo = $dbConnector->connect();
     }
     
-    public function addBooking($full_name, $gender, $email, $citizenship, $age, $room_type, $cabin_number, $adults, $children, $number_of_guests, $ship_name, $destination, $card_type = 'Visa', $card_number = '0000000000000000', $card_expiry = '') {
+    public function addBooking($full_name, $gender, $email, $citizenship, $age, $room_type, $cabin_number, $adults, $children, $number_of_guests, $ship_identifier, $destination, $card_type = 'Visa', $card_number = '0000000000000000', $card_expiry = '') {
         try {
-            // Validate required fields
-            if (empty($full_name) || empty($email) || empty($room_type) || empty($ship_name) || empty($destination)) {
-                return ['success' => false, 'message' => 'Missing required fields: full_name, email, room_type, ship_name, destination'];
+            // Validate required fields - ship_identifier can be ship_id or ship_name
+            if (empty($full_name) || empty($email) || empty($room_type) || empty($ship_identifier) || empty($destination)) {
+                return ['success' => false, 'message' => 'Missing required fields: full_name, email, room_type, ship_identifier, destination'];
+            }
+            
+            // Determine if ship_identifier is ship_id (numeric) or ship_name
+            $ship_id = null;
+            $ship_name = null;
+            
+            if (is_numeric($ship_identifier)) {
+                $ship_id = (int)$ship_identifier;
+                // Get ship_name from ship_id
+                $ship_details = $this->getShipDetails($ship_id);
+                if (!$ship_details['success']) {
+                    return ['success' => false, 'message' => 'Invalid ship_id provided'];
+                }
+                $ship_name = $ship_details['ship_name'];
+            } else {
+                $ship_name = $ship_identifier;
+                // Get ship_id from ship_name
+                $ship_details = $this->getShipDetailsByName($ship_name);
+                if ($ship_details['success']) {
+                    $ship_id = $ship_details['ship_id'];
+                }
             }
             
             // Validate card expiry if provided
@@ -24,8 +45,8 @@ class Booking {
                 }
             }
             
-            // Get dynamic pricing from cabin_type_pricing table
-            $pricing = $this->getCabinTypePrice($ship_name, $destination, $room_type);
+            // Get dynamic pricing from cabin_type_pricing table using ship_id if available
+            $pricing = $this->getCabinTypePrice($ship_id, $ship_name, $destination, $room_type);
             if (!$pricing['success']) {
                 return ['success' => false, 'message' => $pricing['message']];
             }
@@ -45,8 +66,8 @@ class Booking {
             $sql = "INSERT INTO booking_overview (
                 full_name, gender, email, citizenship, age, 
                 room_type, cabin_number, adults, children, number_of_guests, 
-                card_type, card_number, total_price, ship_name, destination
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                card_type, card_number, total_price, ship_id, ship_name, destination
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             
             $stmt = $this->pdo->prepare($sql);
             $result = $stmt->execute([
@@ -63,6 +84,7 @@ class Booking {
                 $card_type,
                 $card_number,
                 $total_price,
+                $ship_id,
                 $ship_name,
                 $destination
             ]);
@@ -119,7 +141,7 @@ class Booking {
         }
     }
     
-    private function getCabinTypePrice($ship_name, $route, $room_type) {
+    private function getCabinTypePrice($ship_id, $ship_name, $route, $room_type) {
         try {
             // Map room types to database column names (handle variations)
             $price_column_map = [
@@ -140,15 +162,29 @@ class Booking {
             
             $price_column = $price_column_map[$room_type];
             
-            $stmt = $this->pdo->prepare("SELECT {$price_column} as price FROM cabin_type_pricing WHERE ship_name = ? AND route = ?");
-            $stmt->execute([$ship_name, $route]);
-            $result = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($result && $result['price'] !== null) {
-                return ['success' => true, 'price' => (float)$result['price']];
-            } else {
-                return ['success' => false, 'message' => 'Pricing not found for this ship and route combination'];
+            // Try ship_id first, then fallback to ship_name
+            if ($ship_id) {
+                $stmt = $this->pdo->prepare("SELECT {$price_column} as price FROM cabin_type_pricing WHERE ship_id = ? AND route = ?");
+                $stmt->execute([$ship_id, $route]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($result && $result['price'] !== null) {
+                    return ['success' => true, 'price' => (float)$result['price']];
+                }
             }
+            
+            // Fallback to ship_name if ship_id didn't work
+            if ($ship_name) {
+                $stmt = $this->pdo->prepare("SELECT {$price_column} as price FROM cabin_type_pricing WHERE ship_name = ? AND route = ?");
+                $stmt->execute([$ship_name, $route]);
+                $result = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($result && $result['price'] !== null) {
+                    return ['success' => true, 'price' => (float)$result['price']];
+                }
+            }
+            
+            return ['success' => false, 'message' => 'Pricing not found for this ship and route combination'];
             
         } catch (Exception $e) {
             return ['success' => false, 'message' => 'Database error: ' . $e->getMessage()];
@@ -277,15 +313,59 @@ class Booking {
         ];
     }
     
-    // Public method to get all pricing for a ship/route combination
-    public function getPricingForShipRoute($ship_name, $route) {
+    // Helper methods for ship details
+    private function getShipDetails($ship_id) {
         try {
-            $stmt = $this->pdo->prepare("
-                SELECT interior_price, ocean_view_price, balcony_price, suite_price 
-                FROM cabin_type_pricing 
-                WHERE ship_name = ? AND route = ?
-            ");
-            $stmt->execute([$ship_name, $route]);
+            $stmt = $this->pdo->prepare("SELECT ship_id, ship_name FROM ship_details WHERE ship_id = ?");
+            $stmt->execute([$ship_id]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($result) {
+                return ['success' => true, 'ship_id' => $result['ship_id'], 'ship_name' => $result['ship_name']];
+            } else {
+                return ['success' => false, 'message' => 'Ship not found with this ID'];
+            }
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Database error: ' . $e->getMessage()];
+        }
+    }
+    
+    private function getShipDetailsByName($ship_name) {
+        try {
+            $stmt = $this->pdo->prepare("SELECT ship_id, ship_name FROM ship_details WHERE ship_name = ?");
+            $stmt->execute([$ship_name]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($result) {
+                return ['success' => true, 'ship_id' => $result['ship_id'], 'ship_name' => $result['ship_name']];
+            } else {
+                return ['success' => false, 'message' => 'Ship not found with this name'];
+            }
+        } catch (Exception $e) {
+            return ['success' => false, 'message' => 'Database error: ' . $e->getMessage()];
+        }
+    }
+    
+    // Public method to get all pricing for a ship/route combination
+    public function getPricingForShipRoute($ship_identifier, $route) {
+        try {
+            // Determine if ship_identifier is ship_id (numeric) or ship_name
+            if (is_numeric($ship_identifier)) {
+                $stmt = $this->pdo->prepare("
+                    SELECT interior_price, ocean_view_price, balcony_price, suite_price 
+                    FROM cabin_type_pricing 
+                    WHERE ship_id = ? AND route = ?
+                ");
+                $stmt->execute([$ship_identifier, $route]);
+            } else {
+                $stmt = $this->pdo->prepare("
+                    SELECT interior_price, ocean_view_price, balcony_price, suite_price 
+                    FROM cabin_type_pricing 
+                    WHERE ship_name = ? AND route = ?
+                ");
+                $stmt->execute([$ship_identifier, $route]);
+            }
+            
             $result = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($result) {

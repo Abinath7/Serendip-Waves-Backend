@@ -24,7 +24,7 @@ try {
     $passenger_id = intval($data['passenger_id']);
     $fields = [
         'passenger_name', 'email',
-        'ship_name', 'route', 'cabin_id', 'age', 'gender', 'citizenship'
+        'ship_id', 'ship_name', 'route', 'cabin_id', 'age', 'gender', 'citizenship'
     ];
 $updates = [];
 $params = [];

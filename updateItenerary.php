@@ -32,6 +32,23 @@ if ($conn->connect_error) {
     exit();
 }
 
+// Get ship_id from ship_details table based on ship_name
+$ship_id = null;
+$shipQuery = $conn->prepare("SELECT ship_id FROM ship_details WHERE ship_name = ?");
+$shipQuery->bind_param("s", $ship_name);
+$shipQuery->execute();
+$shipResult = $shipQuery->get_result();
+if ($shipRow = $shipResult->fetch_assoc()) {
+    $ship_id = $shipRow['ship_id'];
+}
+$shipQuery->close();
+
+if ($ship_id === null) {
+    http_response_code(400);
+    echo json_encode(["message" => "Ship not found: " . $ship_name]);
+    exit();
+}
+
 // Handle image upload if a new file is provided
 $country_image_path = '';
 $updateImage = false;
@@ -57,11 +74,11 @@ $checkColumn = $conn->query("SHOW COLUMNS FROM itineraries LIKE 'country_image'"
 $hasCountryImage = $checkColumn->num_rows > 0;
 
 if ($hasCountryImage && $updateImage) {
-    $stmt = $conn->prepare("UPDATE itineraries SET ship_name=?, route=?, departure_port=?, start_date=?, end_date=?, notes=?, country_image=? WHERE id=?");
-    $stmt->bind_param("sssssssi", $ship_name, $route, $departure_port, $start_date, $end_date, $notes, $country_image_path, $id);
+    $stmt = $conn->prepare("UPDATE itineraries SET ship_id=?, ship_name=?, route=?, departure_port=?, start_date=?, end_date=?, notes=?, country_image=? WHERE id=?");
+    $stmt->bind_param("isssssssi", $ship_id, $ship_name, $route, $departure_port, $start_date, $end_date, $notes, $country_image_path, $id);
 } else {
-    $stmt = $conn->prepare("UPDATE itineraries SET ship_name=?, route=?, departure_port=?, start_date=?, end_date=?, notes=? WHERE id=?");
-    $stmt->bind_param("ssssssi", $ship_name, $route, $departure_port, $start_date, $end_date, $notes, $id);
+    $stmt = $conn->prepare("UPDATE itineraries SET ship_id=?, ship_name=?, route=?, departure_port=?, start_date=?, end_date=?, notes=? WHERE id=?");
+    $stmt->bind_param("issssssi", $ship_id, $ship_name, $route, $departure_port, $start_date, $end_date, $notes, $id);
 }
 
 if ($stmt->execute()) {

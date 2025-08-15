@@ -9,7 +9,7 @@ if ($conn->connect_error) {
     exit();
 }
 
-$result = $conn->query("SELECT ship_name, passenger_count, pool_count, deck_count, restaurant_count, about_ship, ship_image, class, year_built FROM ship_details");
+$result = $conn->query("SELECT ship_id, ship_name, passenger_count, pool_count, deck_count, restaurant_count, about_ship, ship_image, class, year_built FROM ship_details ORDER BY ship_id");
 $ships = [];
 while ($row = $result->fetch_assoc()) {
     $ships[] = $row;

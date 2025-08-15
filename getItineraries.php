@@ -17,8 +17,12 @@ if ($conn->connect_error) {
     exit();
 }
 
-// Include country_image in the SELECT
-$sql = "SELECT id, ship_name, route, departure_port, start_date, end_date, notes, country_image FROM itineraries ORDER BY id DESC";
+// Include country_image and ship_id in the SELECT with JOIN to ship_details
+$sql = "SELECT i.id, i.ship_id, i.ship_name, i.route, i.departure_port, i.start_date, i.end_date, i.notes, i.country_image,
+               s.ship_id as ship_details_id, s.class as ship_class, s.year_built
+        FROM itineraries i 
+        LEFT JOIN ship_details s ON (i.ship_id = s.ship_id OR i.ship_name = s.ship_name)
+        ORDER BY i.id DESC";
 $result = $conn->query($sql);
 
 if (!$result) {

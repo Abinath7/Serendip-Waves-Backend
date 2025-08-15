@@ -13,25 +13,39 @@ try {
     $pdo = $db->connect();
     
     // Get filter parameters from URL
+    $shipId = isset($_GET['ship_id']) ? (int)$_GET['ship_id'] : 0;
     $shipName = isset($_GET['ship']) ? $_GET['ship'] : '';
     $route = isset($_GET['route']) ? $_GET['route'] : '';
     $minPrice = isset($_GET['minPrice']) ? (float)$_GET['minPrice'] : 0;
     $maxPrice = isset($_GET['maxPrice']) ? (float)$_GET['maxPrice'] : 0;
     
-    // Build dynamic query with filters
+    // Build dynamic query with ship_id joins for better performance
     $baseQuery = '
-        SELECT ctp.*, i.ship_name, i.route, s.class as ship_class, s.year_built
+        SELECT 
+            ctp.*,
+            s.ship_id,
+            s.ship_name,
+            s.class as ship_class, 
+            s.year_built,
+            i.route,
+            i.start_date,
+            i.end_date
         FROM cabin_type_pricing ctp
-        JOIN itineraries i ON ctp.ship_name = i.ship_name AND ctp.route = i.route
-        JOIN ship_details s ON i.ship_name = s.ship_name
+        JOIN ship_details s ON ctp.ship_id = s.ship_id
+        JOIN itineraries i ON ctp.ship_id = i.ship_id AND ctp.route = i.route
     ';
     
     $whereConditions = [];
     $params = [];
     
-    // Add ship name filter
-    if (!empty($shipName)) {
-        $whereConditions[] = 'i.ship_name LIKE :ship_name';
+    // Add ship_id filter (preferred)
+    if ($shipId > 0) {
+        $whereConditions[] = 's.ship_id = :ship_id';
+        $params[':ship_id'] = $shipId;
+    }
+    // Add ship name filter (fallback for compatibility)
+    elseif (!empty($shipName)) {
+        $whereConditions[] = 's.ship_name LIKE :ship_name';
         $params[':ship_name'] = '%' . $shipName . '%';
     }
     
@@ -67,7 +81,7 @@ try {
     if (!empty($whereConditions)) {
         $finalQuery .= ' WHERE ' . implode(' AND ', $whereConditions);
     }
-    $finalQuery .= ' ORDER BY i.ship_name, i.route';
+    $finalQuery .= ' ORDER BY s.ship_name, i.route';
     
     $stmt = $pdo->prepare($finalQuery);
     $stmt->execute($params);
@@ -76,6 +90,7 @@ try {
     $response['success'] = true;
     $response['pricing'] = $pricing;
     $response['filters_applied'] = [
+        'ship_id' => $shipId,
         'ship_name' => $shipName,
         'route' => $route,
         'min_price' => $minPrice,
