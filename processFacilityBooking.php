@@ -26,6 +26,7 @@ try {
     $totalCost = $input['total_cost'] ?? 0;
     $passengerEmail = $input['passenger_email'] ?? '';
     $passengerName = $input['passenger_name'] ?? '';
+    $cardDetails = $input['card_details'] ?? null;
     
     if (!$bookingId || !$action) {
         echo json_encode([
@@ -45,6 +46,8 @@ try {
             quantities JSON,
             total_cost DECIMAL(10,2) DEFAULT 0.00,
             payment_status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
+            card_num VARCHAR(20),
+            card_type VARCHAR(50),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
@@ -52,6 +55,22 @@ try {
         )
     ";
     $pdo->exec($createTableQuery);
+    
+    // Add missing columns if table already exists (for existing installations)
+    try {
+        // Check if card_num column exists
+        $checkColumn = "SHOW COLUMNS FROM facility_preferences LIKE 'card_num'";
+        $result = $pdo->query($checkColumn);
+        
+        if ($result->rowCount() == 0) {
+            // Add the missing columns
+            $pdo->exec("ALTER TABLE facility_preferences ADD COLUMN card_num VARCHAR(20) AFTER payment_status");
+            $pdo->exec("ALTER TABLE facility_preferences ADD COLUMN card_type VARCHAR(50) AFTER card_num");
+        }
+    } catch (Exception $e) {
+        // If ALTER fails, it might be because columns already exist, so continue
+        error_log("Column addition warning: " . $e->getMessage());
+    }
     
     // Fetch facility data from database for email content
     $facilityQuery = "SELECT facility_id, facility, unit_price FROM facilities WHERE status = 'active'";
@@ -99,6 +118,37 @@ try {
             // Set payment status to paid and save to database
             $paymentStatus = 'paid';
             
+            // Process card details if provided
+            $cardNum = '';
+            $cardType = '';
+            
+            if ($cardDetails && isset($cardDetails['cardNumber'])) {
+                // Extract last 4 digits for storage
+                $cardNumber = preg_replace('/\s+/', '', $cardDetails['cardNumber']);
+                $cardNum = '**** **** **** ' . substr($cardNumber, -4);
+                
+                // Use selected card type from frontend, with fallback to detection
+                if (isset($cardDetails['cardType'])) {
+                    $cardType = ucfirst($cardDetails['cardType']); // visa -> Visa, mastercard -> Mastercard
+                } else {
+                    // Fallback: Determine card type based on first digit
+                    $firstDigit = substr($cardNumber, 0, 1);
+                    switch ($firstDigit) {
+                        case '4':
+                            $cardType = 'Visa';
+                            break;
+                        case '5':
+                            $cardType = 'Mastercard';
+                            break;
+                        case '3':
+                            $cardType = 'American Express';
+                            break;
+                        default:
+                            $cardType = 'Unknown';
+                    }
+                }
+            }
+            
             // Check if preference already exists
             $checkQuery = "SELECT id, selected_facilities, quantities, total_cost FROM facility_preferences WHERE booking_id = ?";
             $checkStmt = $pdo->prepare($checkQuery);
@@ -127,7 +177,7 @@ try {
                 // Update existing record with merged data
                 $updateQuery = "
                     UPDATE facility_preferences 
-                    SET passenger_name = ?, selected_facilities = ?, quantities = ?, total_cost = ?, payment_status = ?, status = ?
+                    SET passenger_name = ?, selected_facilities = ?, quantities = ?, total_cost = ?, payment_status = ?, status = ?, card_num = ?, card_type = ?
                     WHERE booking_id = ?
                 ";
                 $updateStmt = $pdo->prepare($updateQuery);
@@ -138,13 +188,15 @@ try {
                     $mergedTotalCost,
                     $paymentStatus,
                     $paymentStatus,
+                    $cardNum,
+                    $cardType,
                     $bookingId
                 ]);
             } else {
                 // Insert new record
                 $insertQuery = "
-                    INSERT INTO facility_preferences (booking_id, passenger_name, selected_facilities, quantities, total_cost, payment_status, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO facility_preferences (booking_id, passenger_name, selected_facilities, quantities, total_cost, payment_status, status, card_num, card_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ";
                 $insertStmt = $pdo->prepare($insertQuery);
                 $insertStmt->execute([
@@ -154,13 +206,15 @@ try {
                     json_encode($quantities),
                     $totalCost,
                     $paymentStatus,
-                    $paymentStatus
+                    $paymentStatus,
+                    $cardNum,
+                    $cardType
                 ]);
             }
             
             // Send confirmation email
             $emailSubject = "Facility Booking Confirmation - Serendip Waves";
-            $emailBody = generateConfirmationEmail($passengerName, $bookingId, $facilityDetails, $totalCost);
+            $emailBody = generateConfirmationEmail($passengerName, $bookingId, $facilityDetails, $totalCost, $cardNum, $cardType);
             
             $response['success'] = true;
             $response['message'] = 'Facilities confirmed and payment processed successfully!';
@@ -293,7 +347,7 @@ try {
 }
 
 // Email template functions
-function generateConfirmationEmail($passengerName, $bookingId, $facilityDetails, $totalCost) {
+function generateConfirmationEmail($passengerName, $bookingId, $facilityDetails, $totalCost, $cardNum = '', $cardType = '') {
     $facilitiesHtml = '';
     foreach ($facilityDetails as $facility) {
         $unitText = $facility['unit_price'] > 0 ? 'per ' . $facility['unit'] : 'Free';
@@ -348,7 +402,14 @@ function generateConfirmationEmail($passengerName, $bookingId, $facilityDetails,
                 
                 <div class='total'>
                     <p>Total Amount Paid: $" . number_format($totalCost, 2) . "</p>
-                </div>
+                </div>" . 
+                ($cardNum ? "
+                
+                <h3>💳 Payment Details:</h3>
+                <div style='background-color: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 15px 0;'>
+                    <p><strong>Card Used:</strong> " . $cardType . " " . $cardNum . "</p>
+                    <p><strong>Payment Status:</strong> ✅ Confirmed</p>
+                </div>" : "") . "
                 
                 <p>🎉 You're all set! Please present this confirmation email at the facility reception on board.</p>
                 <p>If you have any questions, please contact our customer service team.</p>
