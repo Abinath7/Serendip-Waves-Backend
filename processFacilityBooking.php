@@ -115,9 +115,6 @@ try {
     
     switch ($action) {
         case 'confirm':
-            // Set payment status to paid and save to database
-            $paymentStatus = 'paid';
-            
             // Process card details if provided
             $cardNum = '';
             $cardType = '';
@@ -149,139 +146,164 @@ try {
                 }
             }
             
-            // Check if preference already exists
-            $checkQuery = "SELECT id, selected_facilities, quantities, total_cost FROM facility_preferences WHERE booking_id = ?";
-            $checkStmt = $pdo->prepare($checkQuery);
-            $checkStmt->execute([$bookingId]);
-            $existingRecord = $checkStmt->fetch();
+            // Update all pending records for this booking to paid status
+            $updateQuery = "
+                UPDATE facility_preferences 
+                SET payment_status = 'paid', status = 'paid', card_num = ?, card_type = ?, updated_at = NOW()
+                WHERE booking_id = ? AND payment_status = 'pending'
+            ";
+            $updateStmt = $pdo->prepare($updateQuery);
+            $result = $updateStmt->execute([$cardNum, $cardType, $bookingId]);
             
-            if ($existingRecord) {
-                // Merge with existing facilities instead of overwriting
-                $existingFacilities = json_decode($existingRecord['selected_facilities'], true) ?: [];
-                $existingQuantities = json_decode($existingRecord['quantities'], true) ?: [];
+            if (!$result) {
+                throw new Exception('Failed to update payment status');
+            }
+            
+            $updatedRecords = $updateStmt->rowCount();
+            if ($updatedRecords === 0) {
+                // Check if all records are already paid
+                $allRecordsQuery = "SELECT COUNT(*) as total_count, 
+                                          SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_count
+                                   FROM facility_preferences WHERE booking_id = ?";
+                $allStmt = $pdo->prepare($allRecordsQuery);
+                $allStmt->execute([$bookingId]);
+                $counts = $allStmt->fetch();
                 
-                // Merge new facilities with existing ones
-                $mergedFacilities = array_merge($existingFacilities, $selectedFacilities);
-                $mergedQuantities = array_merge($existingQuantities, $quantities);
+                if ($counts['total_count'] > 0 && $counts['paid_count'] == $counts['total_count']) {
+                    throw new Exception('All facility bookings are already paid. No payment required.');
+                } else {
+                    throw new Exception('No pending facility bookings found for payment confirmation.');
+                }
+            }
+            
+            // Get all confirmed facilities for this booking to send in email
+            $getAllQuery = "SELECT * FROM facility_preferences WHERE booking_id = ? ORDER BY created_at";
+            $getAllStmt = $pdo->prepare($getAllQuery);
+            $getAllStmt->execute([$bookingId]);
+            $allRecords = $getAllStmt->fetchAll();
+            
+            // Calculate facility details for email from all records
+            $allFacilityDetails = [];
+            $totalPaidCost = 0;
+            
+            foreach ($allRecords as $record) {
+                $facilities = json_decode($record['selected_facilities'], true) ?: [];
+                $quantities = json_decode($record['quantities'], true) ?: [];
                 
-                // Recalculate total cost based on merged facilities (not just adding totals)
-                $mergedTotalCost = 0;
-                foreach ($mergedFacilities as $facilityCode => $isSelected) {
+                foreach ($facilities as $facilityCode => $isSelected) {
                     if ($isSelected && isset($facilityMap[$facilityCode])) {
-                        $quantity = $mergedQuantities[$facilityCode] ?? 1;
+                        $quantity = $quantities[$facilityCode] ?? 1;
                         $facilityPrice = $facilityMap[$facilityCode]['price'];
-                        $mergedTotalCost += $facilityPrice * $quantity;
+                        $totalPrice = $facilityPrice * $quantity;
+                        
+                        // Add or update facility in the list
+                        if (!isset($allFacilityDetails[$facilityCode])) {
+                            $allFacilityDetails[$facilityCode] = [
+                                'name' => $facilityMap[$facilityCode]['name'],
+                                'quantity' => 0,
+                                'unit_price' => $facilityPrice,
+                                'total_price' => 0,
+                                'unit' => $facilityMap[$facilityCode]['unit'] ?? 'access'
+                            ];
+                        }
+                        $allFacilityDetails[$facilityCode]['quantity'] += $quantity;
+                        $allFacilityDetails[$facilityCode]['total_price'] += $totalPrice;
                     }
                 }
                 
-                // Update existing record with merged data
-                $updateQuery = "
-                    UPDATE facility_preferences 
-                    SET passenger_name = ?, selected_facilities = ?, quantities = ?, total_cost = ?, payment_status = ?, status = ?, card_num = ?, card_type = ?
-                    WHERE booking_id = ?
-                ";
-                $updateStmt = $pdo->prepare($updateQuery);
-                $updateStmt->execute([
-                    $passengerName,
-                    json_encode($mergedFacilities),
-                    json_encode($mergedQuantities),
-                    $mergedTotalCost,
-                    $paymentStatus,
-                    $paymentStatus,
-                    $cardNum,
-                    $cardType,
-                    $bookingId
-                ]);
-            } else {
-                // Insert new record
-                $insertQuery = "
-                    INSERT INTO facility_preferences (booking_id, passenger_name, selected_facilities, quantities, total_cost, payment_status, status, card_num, card_type)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ";
-                $insertStmt = $pdo->prepare($insertQuery);
-                $insertStmt->execute([
-                    $bookingId,
-                    $passengerName,
-                    json_encode($selectedFacilities),
-                    json_encode($quantities),
-                    $totalCost,
-                    $paymentStatus,
-                    $paymentStatus,
-                    $cardNum,
-                    $cardType
-                ]);
+                if ($record['payment_status'] === 'paid') {
+                    $totalPaidCost += $record['total_cost'];
+                }
             }
             
+            // Convert associative array to indexed array for email generation
+            $facilityDetailsForEmail = array_values($allFacilityDetails);
+            
             // Send confirmation email
-            $emailSubject = "Facility Booking Confirmation - Serendip Waves";
-            $emailBody = generateConfirmationEmail($passengerName, $bookingId, $facilityDetails, $totalCost, $cardNum, $cardType);
+            $emailSubject = "Facility Booking Payment Confirmation - Serendip Waves";
+            $emailBody = generateConfirmationEmail($passengerName, $bookingId, $facilityDetailsForEmail, $totalPaidCost, $cardNum, $cardType);
             
             $response['success'] = true;
-            $response['message'] = 'Facilities confirmed and payment processed successfully!';
+            $response['message'] = "Payment confirmed for $updatedRecords facility booking(s). Total paid: $" . number_format($totalPaidCost, 2);
             break;
             
         case 'save_pending':
             // Save as pending
             $paymentStatus = 'pending';
             
-            // Check if preference already exists
-            $checkQuery = "SELECT id, selected_facilities, quantities, total_cost FROM facility_preferences WHERE booking_id = ?";
+            // Check what facilities are already PAID for this booking_id across all sessions
+            $checkQuery = "SELECT selected_facilities, quantities, payment_status, total_cost FROM facility_preferences WHERE booking_id = ?";
             $checkStmt = $pdo->prepare($checkQuery);
             $checkStmt->execute([$bookingId]);
-            $existingRecord = $checkStmt->fetch();
+            $existingRecords = $checkStmt->fetchAll();
             
-            if ($existingRecord) {
-                // Merge with existing facilities for pending bookings too
-                $existingFacilities = json_decode($existingRecord['selected_facilities'], true) ?: [];
-                $existingQuantities = json_decode($existingRecord['quantities'], true) ?: [];
-                
-                // Merge new facilities with existing ones
-                $mergedFacilities = array_merge($existingFacilities, $selectedFacilities);
-                $mergedQuantities = array_merge($existingQuantities, $quantities);
-                
-                // Recalculate total cost based on merged facilities (not just adding totals)
-                $mergedTotalCost = 0;
-                foreach ($mergedFacilities as $facilityCode => $isSelected) {
-                    if ($isSelected && isset($facilityMap[$facilityCode])) {
-                        $quantity = $mergedQuantities[$facilityCode] ?? 1;
-                        $facilityPrice = $facilityMap[$facilityCode]['price'];
-                        $mergedTotalCost += $facilityPrice * $quantity;
+            // Check if there are any pending amounts - if so, block new facility additions
+            $pendingAmount = 0;
+            foreach ($existingRecords as $record) {
+                if ($record['payment_status'] === 'pending') {
+                    $pendingAmount += $record['total_cost'];
+                }
+            }
+            
+            if ($pendingAmount > 0) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'You have pending facility bookings totaling $' . number_format($pendingAmount, 2) . '. Please complete payment for existing bookings before adding new facilities.',
+                    'pending_amount' => $pendingAmount,
+                    'action_required' => 'complete_payment'
+                ]);
+                exit();
+            }
+            
+            // Collect only PAID facilities across all sessions
+            $paidFacilities = [];
+            foreach ($existingRecords as $record) {
+                // Only check facilities that have been paid for
+                if ($record['payment_status'] === 'paid') {
+                    $facilities = json_decode($record['selected_facilities'], true) ?: [];
+                    foreach ($facilities as $facilityCode => $isSelected) {
+                        if ($isSelected) {
+                            $paidFacilities[$facilityCode] = true;
+                        }
                     }
                 }
-                
-                // Update existing record with merged data
-                $updateQuery = "
-                    UPDATE facility_preferences 
-                    SET passenger_name = ?, selected_facilities = ?, quantities = ?, total_cost = ?, payment_status = ?, status = ?
-                    WHERE booking_id = ?
-                ";
-                $updateStmt = $pdo->prepare($updateQuery);
-                $updateStmt->execute([
-                    $passengerName,
-                    json_encode($mergedFacilities),
-                    json_encode($mergedQuantities),
-                    $mergedTotalCost,
-                    $paymentStatus,
-                    $paymentStatus,
-                    $bookingId
-                ]);
-            } else {
-                // Insert new record
-                $insertQuery = "
-                    INSERT INTO facility_preferences (booking_id, passenger_name, selected_facilities, quantities, total_cost, payment_status, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ";
-                $insertStmt = $pdo->prepare($insertQuery);
-                $insertStmt->execute([
-                    $bookingId,
-                    $passengerName,
-                    json_encode($selectedFacilities),
-                    json_encode($quantities),
-                    $totalCost,
-                    $paymentStatus,
-                    $paymentStatus
-                ]);
             }
+            
+            // Check for facilities that are already paid for in the new booking request
+            $alreadyPaidFacilities = [];
+            foreach ($selectedFacilities as $facilityCode => $isSelected) {
+                if ($isSelected && isset($paidFacilities[$facilityCode])) {
+                    $facilityName = $facilityMap[$facilityCode]['name'] ?? $facilityCode;
+                    $alreadyPaidFacilities[] = $facilityName;
+                }
+            }
+            
+            // If there are paid facilities being requested again, reject the booking
+            if (!empty($alreadyPaidFacilities)) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'You have already paid for the following facilities and cannot book them again: ' . implode(', ', $alreadyPaidFacilities) . '. Please remove them from your selection.',
+                    'already_paid_facilities' => $alreadyPaidFacilities
+                ]);
+                exit();
+            }
+            
+            // No duplicates found, proceed to add new facility booking as separate session
+            // Always insert new record to create separate booking sessions
+            $insertQuery = "
+                INSERT INTO facility_preferences (booking_id, passenger_name, selected_facilities, quantities, total_cost, payment_status, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ";
+            $insertStmt = $pdo->prepare($insertQuery);
+            $insertStmt->execute([
+                $bookingId,
+                $passengerName,
+                json_encode($selectedFacilities),
+                json_encode($quantities),
+                $totalCost,
+                $paymentStatus,
+                $paymentStatus
+            ]);
             
             // Send pending booking email
             $emailSubject = "Facility Booking Saved - Payment Pending - Serendip Waves";
@@ -350,7 +372,7 @@ try {
 function generateConfirmationEmail($passengerName, $bookingId, $facilityDetails, $totalCost, $cardNum = '', $cardType = '') {
     $facilitiesHtml = '';
     foreach ($facilityDetails as $facility) {
-        $unitText = $facility['unit_price'] > 0 ? 'per ' . $facility['unit'] : 'Free';
+        $unitText = $facility['unit_price'] > 0 ? 'per ' . ($facility['unit'] ?? 'access') : 'Free';
         $facilitiesHtml .= "
             <tr>
                 <td style='padding: 8px; border-bottom: 1px solid #ddd;'>{$facility['name']}</td>
