@@ -41,8 +41,9 @@ class Mailer {
         try {
             $this->mail->send();
             return true;
-                } catch (Exception $e) {
-            echo "Message could not be sent. Mailer Error: {$this->mail->ErrorInfo}";
+        } catch (Exception $e) {
+            error_log("Mailer Error: " . $this->mail->ErrorInfo);
+            return false;
         }
     }
 }

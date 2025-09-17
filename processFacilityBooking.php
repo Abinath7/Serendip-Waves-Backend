@@ -161,18 +161,91 @@ try {
             
             $updatedRecords = $updateStmt->rowCount();
             if ($updatedRecords === 0) {
-                // Check if all records are already paid
-                $allRecordsQuery = "SELECT COUNT(*) as total_count, 
-                                          SUM(CASE WHEN payment_status = 'paid' THEN 1 ELSE 0 END) as paid_count
-                                   FROM facility_preferences WHERE booking_id = ?";
+                // No pending records found - this could be direct payment or additional facilities
+                
+                // Get all existing records for this booking
+                $allRecordsQuery = "SELECT selected_facilities, payment_status FROM facility_preferences WHERE booking_id = ?";
                 $allStmt = $pdo->prepare($allRecordsQuery);
                 $allStmt->execute([$bookingId]);
-                $counts = $allStmt->fetch();
+                $existingRecords = $allStmt->fetchAll();
                 
-                if ($counts['total_count'] > 0 && $counts['paid_count'] == $counts['total_count']) {
-                    throw new Exception('All facility bookings are already paid. No payment required.');
-                } else {
-                    throw new Exception('No pending facility bookings found for payment confirmation.');
+                if (count($existingRecords) > 0) {
+                    // Existing records found - check if user is trying to book NEW facilities or same ones
+                    
+                    // Collect all already paid facilities
+                    $alreadyPaidFacilities = [];
+                    foreach ($existingRecords as $record) {
+                        if ($record['payment_status'] === 'paid') {
+                            $facilities = json_decode($record['selected_facilities'], true) ?: [];
+                            foreach ($facilities as $facilityCode => $isSelected) {
+                                if ($isSelected) {
+                                    $alreadyPaidFacilities[$facilityCode] = true;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Check if user is trying to book facilities they already paid for
+                    $duplicateFacilities = [];
+                    foreach ($selectedFacilities as $facilityCode => $isSelected) {
+                        if ($isSelected && isset($alreadyPaidFacilities[$facilityCode])) {
+                            $facilityName = $facilityMap[$facilityCode]['name'] ?? $facilityCode;
+                            $duplicateFacilities[] = $facilityName;
+                        }
+                    }
+                    
+                    if (!empty($duplicateFacilities)) {
+                        // User is trying to book facilities they already paid for
+                        echo json_encode([
+                            'success' => false,
+                            'message' => 'You have already paid for the following facilities: ' . implode(', ', $duplicateFacilities) . '. Please select different facilities.',
+                            'already_paid_facilities' => $duplicateFacilities,
+                            'duplicate_booking' => true
+                        ]);
+                        exit();
+                    }
+                    
+                    // User is booking NEW facilities - allow this as additional booking
+                    // Fall through to create new booking logic below
+                }
+                
+                // DIRECT PAYMENT SCENARIO: Create new booking for new facilities and pay immediately
+                
+                // First create the booking as pending
+                $insertQuery = "
+                    INSERT INTO facility_preferences (booking_id, passenger_name, selected_facilities, quantities, total_cost, payment_status, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', 'pending', NOW(), NOW())
+                ";
+                $insertStmt = $pdo->prepare($insertQuery);
+                $insertResult = $insertStmt->execute([
+                    $bookingId,
+                    $passengerName,
+                    json_encode($selectedFacilities),
+                    json_encode($quantities),
+                    $totalCost
+                ]);
+                
+                if (!$insertResult) {
+                    throw new Exception('Failed to create facility booking for direct payment.');
+                }
+                
+                // Now immediately update it to paid status
+                $directPaymentQuery = "
+                    UPDATE facility_preferences 
+                    SET payment_status = 'paid', status = 'paid', card_num = ?, card_type = ?, updated_at = NOW()
+                    WHERE booking_id = ? AND payment_status = 'pending'
+                ";
+                $directPaymentStmt = $pdo->prepare($directPaymentQuery);
+                $directPaymentResult = $directPaymentStmt->execute([$cardNum, $cardType, $bookingId]);
+                
+                if (!$directPaymentResult) {
+                    throw new Exception('Failed to process direct payment.');
+                }
+                
+                $updatedRecords = $directPaymentStmt->rowCount();
+                
+                if ($updatedRecords === 0) {
+                    throw new Exception('Failed to confirm direct payment - no records updated.');
                 }
             }
             
