@@ -58,6 +58,9 @@ $body = "
         .total { font-weight: bold; font-size: 18px; color: #007bff; }
         .footer { background-color: #6c757d; color: white; padding: 15px; text-align: center; }
         .info-box { background-color: #e8f4f8; border: 1px solid #bee5eb; padding: 15px; margin: 15px 0; border-radius: 5px; }
+        .evaluation-btn { display: inline-block; background-color: #4CAF50; color: white !important; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px; transition: background-color 0.3s; }
+        .evaluation-btn:hover { background-color: #45a049; }
+        .evaluation-section { background-color: #e8f5e8 !important; border: 2px solid #4CAF50 !important; }
     </style>
 </head>
 <body>
@@ -104,6 +107,22 @@ $body = "
                 • Contact us if you need to make any changes</p>
             </div>
             
+            <div class='info-box' style='background-color: #e8f5e8; border: 1px solid #4CAF50;'>
+                <h3>⭐ Help Us Improve Our Service!</h3>
+                <p>Your experience matters to us! We'd love to hear your feedback about our booking system and overall service quality.</p>
+                <p><strong>It takes just 2-3 minutes</strong> and helps us provide better experiences for all our guests.</p>
+                
+                <div style='text-align: center; margin: 20px 0;'>
+                    <a href='https://docs.google.com/forms/d/e/1FAIpQLSeAE2PCJNrKp6kMlqSMwIHG3XuR0as7xdoDIXqfrW9uyoNPYQ/viewform?usp=dialog' 
+                       style='display: inline-block; background-color: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; font-size: 16px;'
+                       target='_blank'>
+                        📝 Share Your Feedback
+                    </a>
+                </div>
+                
+                <p><small style='color: #666;'>Your feedback is anonymous and helps us enhance our services for future guests. Thank you for helping us improve!</small></p>
+            </div>
+            
             <p>We can't wait to welcome you on board! If you have any questions or need to make changes to your booking, please don't hesitate to contact us.</p>
         </div>
         <div class='footer'>
@@ -112,6 +131,15 @@ $body = "
             📞 +94771234567<br>
             📧 info@serendipwaves.com<br>
             🌐 www.serendipwaves.com</p>
+            
+            <div style='background-color: #5a6268; padding: 15px; margin: 10px 0; border-radius: 5px;'>
+                <p style='margin: 5px 0;'><strong>🌟 Don't forget to share your experience!</strong></p>
+                <p style='margin: 5px 0; font-size: 14px;'>Your feedback helps us serve you better.</p>
+                <a href='https://docs.google.com/forms/d/e/1FAIpQLSeAE2PCJNrKp6kMlqSMwIHG3XuR0as7xdoDIXqfrW9uyoNPYQ/viewform?usp=dialog' 
+                   style='color: #4CAF50; font-weight: bold; text-decoration: underline;'
+                   target='_blank'>📝 Quick Feedback Form</a>
+            </div>
+            
             <p>Thank you for choosing Serendip Waves!</p>
             <p>Have a wonderful cruise experience! 🚢</p>
         </div>
