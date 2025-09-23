@@ -9,7 +9,7 @@ session_start();
 
 // Enable error reporting for debugging
 error_reporting(E_ALL);
-ini_set('display_errors', 0); // Set to 1 for debugging, 0 for production
+ini_set('display_errors', 1); // Set to 1 for debugging, 0 for production
 
 // Include CORS headers
 require_once 'includes/cors_headers.php';
@@ -100,8 +100,8 @@ $updateResult = updateProfile($db, $userId, $fullName, $email, $dateOfBirth, $ge
 
 if ($updateResult) {
     try {
-        // Fetch updated user data (including phone_number and country for display)
-        $stmt = $db->prepare("SELECT id, full_name, email, date_of_birth, gender, phone_number, passport_number, country, created_at FROM users WHERE id = ?");
+        // Fetch updated user data (including phone_number, country, and role for display)
+        $stmt = $db->prepare("SELECT id, full_name, email, date_of_birth, gender, phone_number, passport_number, country, role, created_at FROM users WHERE id = ?");
         $stmt->execute([$userId]);
         $updatedUser = $stmt->fetch(PDO::FETCH_ASSOC);
         
