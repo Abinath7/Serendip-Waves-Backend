@@ -25,6 +25,7 @@ class Customer extends User {
                     'date_of_birth' => $user['date_of_birth'] ?? $user['dob'] ?? null,
                     'gender' => $user['gender'] ?? null,
                     'passport_number' => $user['passport_number'] ?? $user['passport'] ?? null,
+                    'country' => $user['country'] ?? null,
                     'profile_image' => $user['profile_image'] ?? null,
                     'created_at' => $user['created_at'] ?? null,
                     'updated_at' => $user['updated_at'] ?? null,

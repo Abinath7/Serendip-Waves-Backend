@@ -19,6 +19,7 @@ $phone_number = isset($_POST['phone_number']) ? htmlspecialchars(strip_tags($_PO
 $date_of_birth = isset($_POST['date_of_birth']) ? htmlspecialchars(strip_tags($_POST['date_of_birth'])) : null;
 $gender = isset($_POST['gender']) ? htmlspecialchars(strip_tags($_POST['gender'])) : null;
 $passport_number = isset($_POST['passport_number']) ? htmlspecialchars(strip_tags($_POST['passport_number'])) : null;
+$country = isset($_POST['country']) ? htmlspecialchars(strip_tags($_POST['country'])) : null;
 
 // Validate required fields (passport is optional)
 if (!$full_name || !$email || !$password || !$phone_number || !$date_of_birth || !$gender) {
@@ -36,7 +37,7 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 $hashed_password = password_hash($password, PASSWORD_BCRYPT);
 
 $customerRegister = new Customer();
-$result = $customerRegister->registerUser($full_name, $email, $hashed_password, $phone_number, $date_of_birth, $gender, $passport_number);
+$result = $customerRegister->registerUser($full_name, $email, $hashed_password, $phone_number, $date_of_birth, $gender, $passport_number, $country);
 
 if ($result) {
     http_response_code(200);

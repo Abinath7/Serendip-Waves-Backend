@@ -22,14 +22,16 @@ try {
 
 /**
  * Update user profile in database
+ * Note: phone_number and country are excluded for security reasons
  */
-function updateProfile($db, $userId, $fullName, $email, $dateOfBirth, $gender, $phoneNumber, $passportNumber) {
+function updateProfile($db, $userId, $fullName, $email, $dateOfBirth, $gender, $passportNumber) {
     try {
         // Handle empty date of birth
         $dateOfBirth = !empty($dateOfBirth) ? $dateOfBirth : null;
         
-        $stmt = $db->prepare("UPDATE users SET full_name = ?, email = ?, date_of_birth = ?, gender = ?, phone_number = ?, passport_number = ? WHERE id = ?");
-        $result = $stmt->execute([$fullName, $email, $dateOfBirth, $gender, $phoneNumber, $passportNumber, $userId]);
+        // Exclude phone_number and country from updates for security reasons
+        $stmt = $db->prepare("UPDATE users SET full_name = ?, email = ?, date_of_birth = ?, gender = ?, passport_number = ? WHERE id = ?");
+        $result = $stmt->execute([$fullName, $email, $dateOfBirth, $gender, $passportNumber, $userId]);
         
         if (!$result) {
             error_log("Profile update failed for user ID: $userId");
@@ -58,8 +60,8 @@ $userId = intval($_POST['id'] ?? 0);
 $fullName = trim($_POST['full_name'] ?? '');
 $dateOfBirth = trim($_POST['date_of_birth'] ?? '');
 $gender = trim($_POST['gender'] ?? '');
-$phoneNumber = trim($_POST['phone_number'] ?? '');
 $passportNumber = trim($_POST['passport_number'] ?? '');
+// Note: phone_number and country are intentionally excluded from updates
 
 // Debug: Log extracted values
 error_log("Extracted values - User ID: $userId, Full Name: '$fullName'");
@@ -90,13 +92,13 @@ try {
     sendErrorResponse('Database error occurred', 500);
 }
 
-// Attempt to update profile
-$updateResult = updateProfile($db, $userId, $fullName, $email, $dateOfBirth, $gender, $phoneNumber, $passportNumber);
+// Attempt to update profile (phone_number and country excluded)
+$updateResult = updateProfile($db, $userId, $fullName, $email, $dateOfBirth, $gender, $passportNumber);
 
 if ($updateResult) {
     try {
-        // Fetch updated user data
-        $stmt = $db->prepare("SELECT id, full_name, email, date_of_birth, gender, phone_number, passport_number, created_at FROM users WHERE id = ?");
+        // Fetch updated user data (including phone_number and country for display)
+        $stmt = $db->prepare("SELECT id, full_name, email, date_of_birth, gender, phone_number, passport_number, country, created_at FROM users WHERE id = ?");
         $stmt->execute([$userId]);
         $updatedUser = $stmt->fetch(PDO::FETCH_ASSOC);
         
