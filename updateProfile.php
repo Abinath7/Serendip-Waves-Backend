@@ -4,6 +4,9 @@
  * Handles updating user profile information with proper CORS support
  */
 
+// Start session to update session data
+session_start();
+
 // Enable error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 0); // Set to 1 for debugging, 0 for production
@@ -92,7 +95,7 @@ try {
     sendErrorResponse('Database error occurred', 500);
 }
 
-// Attempt to update profile (phone_number and country excluded)
+// Attempt to update profile
 $updateResult = updateProfile($db, $userId, $fullName, $email, $dateOfBirth, $gender, $passportNumber);
 
 if ($updateResult) {
@@ -103,6 +106,20 @@ if ($updateResult) {
         $updatedUser = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if ($updatedUser) {
+            // Debug: Log session info
+            error_log("Session ID: " . session_id());
+            error_log("Session user before update: " . print_r($_SESSION['user'] ?? 'No session user', true));
+            
+            // Update session data with the new user information
+            if (isset($_SESSION['user']) && $_SESSION['user']['id'] == $userId) {
+                $_SESSION['user'] = array_merge($_SESSION['user'], $updatedUser);
+                error_log("Session updated for user ID: $userId");
+                error_log("Session user after update: " . print_r($_SESSION['user'], true));
+            } else {
+                error_log("No matching session found for user ID: $userId");
+                error_log("Current session user ID: " . ($_SESSION['user']['id'] ?? 'No session'));
+            }
+            
             sendSuccessResponse($updatedUser, 'Profile updated successfully');
         } else {
             sendErrorResponse('Failed to retrieve updated profile data');

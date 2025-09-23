@@ -50,8 +50,7 @@ try {
             card_type VARCHAR(50),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending',
-            UNIQUE KEY unique_booking (booking_id)
+            status ENUM('pending', 'paid', 'cancelled') DEFAULT 'pending'
         )
     ";
     $pdo->exec($createTableQuery);
@@ -234,6 +233,8 @@ try {
                     UPDATE facility_preferences 
                     SET payment_status = 'paid', status = 'paid', card_num = ?, card_type = ?, updated_at = NOW()
                     WHERE booking_id = ? AND payment_status = 'pending'
+                    ORDER BY created_at DESC
+                    LIMIT 1
                 ";
                 $directPaymentStmt = $pdo->prepare($directPaymentQuery);
                 $directPaymentResult = $directPaymentStmt->execute([$cardNum, $cardType, $bookingId]);
