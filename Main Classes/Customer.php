@@ -14,7 +14,7 @@ class Customer extends User {
         $stmt->execute();
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($user && (password_verify($password, $user['password']) || $user['password'] === $password)) {
+        if ($user && password_verify($password, $user['password'])) {
             return [
                 'success' => true,
                 'user' => [
