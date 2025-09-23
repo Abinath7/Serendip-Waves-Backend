@@ -11,6 +11,7 @@ abstract class User
     protected $date_of_birth;
     protected $gender;
     protected $passport_number;
+    protected $country;
     protected $pdo;
     
 
@@ -45,7 +46,7 @@ abstract class User
 }
 
 
-public function registerUser($full_name, $email, $password, $phone_number, $date_of_birth, $gender, $passport_number = null)
+public function registerUser($full_name, $email, $password, $phone_number, $date_of_birth, $gender, $passport_number = null, $country = null)
 {
     $this->full_name = $full_name;
     $this->email = $email;
@@ -54,6 +55,7 @@ public function registerUser($full_name, $email, $password, $phone_number, $date
     $this->date_of_birth = $date_of_birth;
     $this->gender = $gender;
     $this->passport_number = $passport_number;
+    $this->country = $country;
 
     if ($this->isAlreadyExists()) {
         // Optionally: throw error or log that user exists
@@ -62,7 +64,7 @@ public function registerUser($full_name, $email, $password, $phone_number, $date
     }
 
     try {
-        $sql = "INSERT INTO users (full_name, email, password, phone_number, date_of_birth, gender, passport_number) VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $sql = "INSERT INTO users (full_name, email, password, phone_number, date_of_birth, gender, passport_number, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $this->pdo->prepare($sql);
         $stmt->bindParam(1, $this->full_name);
         $stmt->bindParam(2, $this->email);
@@ -71,6 +73,7 @@ public function registerUser($full_name, $email, $password, $phone_number, $date
         $stmt->bindParam(5, $this->date_of_birth);
         $stmt->bindParam(6, $this->gender);
         $stmt->bindParam(7, $this->passport_number);    
+        $stmt->bindParam(8, $this->country);    
         $rs = $stmt->execute();
 
         if ($rs) {
@@ -107,6 +110,7 @@ public function login($email, $password)
                     "date_of_birth" => $user['date_of_birth'] ?? $user['dob'] ?? null,
                     "gender" => $user['gender'] ?? null,
                     "passport_number" => $user['passport_number'] ?? $user['passport'] ?? null,
+                    "country" => $user['country'] ?? null,
                     "profile_image" => $user['profile_image'] ?? null,
                     "created_at" => $user['created_at'] ?? null,
                     "updated_at" => $user['updated_at'] ?? null,
