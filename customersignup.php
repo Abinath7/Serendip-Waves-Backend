@@ -37,6 +37,14 @@ if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
 $hashed_password = password_hash($password, PASSWORD_BCRYPT);
 
 $customerRegister = new Customer();
+
+// Check if email already exists before attempting registration
+if ($customerRegister->checkEmailExists($email)) {
+    http_response_code(400);
+    echo json_encode(["status" => "error", "message" => "Email is already registered"]);
+    exit();
+}
+
 $result = $customerRegister->registerUser($full_name, $email, $hashed_password, $phone_number, $date_of_birth, $gender, $passport_number, $country);
 
 if ($result) {
